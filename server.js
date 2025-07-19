@@ -5,7 +5,7 @@ const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
 const { v4: uuidv4 } = require('uuid');
-const swaggerUi = require('swagger-ui-express');
+// const swaggerUi = require('swagger-ui-express');
 const cors = require('cors');
 
 const app = express();
@@ -581,296 +581,6 @@ app.get('/api/health', (req, res) => {
     });
 });
 
-// Swagger Documentation
-const swaggerDocument = {
-    openapi: '3.0.0',
-    info: {
-        title: 'Professional Image Processing API',
-        version: '1.0.0',
-        description: 'High-performance image processing API with AI enhancements, batch processing, and comprehensive format support'
-    },
-    servers: [
-        {
-            url: `http://localhost:${PORT}`,
-            description: 'Local development server'
-        }
-    ],
-    paths: {
-        '/api/analyze-image': {
-            post: {
-                summary: 'Analyze image properties and get AI recommendations',
-                tags: ['Image Analysis'],
-                requestBody: {
-                    content: {
-                        'multipart/form-data': {
-                            schema: {
-                                type: 'object',
-                                properties: {
-                                    file: {
-                                        type: 'string',
-                                        format: 'binary',
-                                        description: 'Image file to analyze (max 10MB)'
-                                    }
-                                }
-                            }
-                        }
-                    }
-                },
-                responses: {
-                    200: {
-                        description: 'Analysis completed successfully',
-                        content: {
-                            'application/json': {
-                                schema: {
-                                    type: 'object',
-                                    properties: {
-                                        colors: { type: 'array', items: { type: 'string' } },
-                                        hasTransparency: { type: 'boolean' },
-                                        aspectRatio: { type: 'number' },
-                                        recommendedFormat: { type: 'string' },
-                                        estimatedQuality: { type: 'number' },
-                                        metadata: { type: 'object' }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        '/api/convert-image': {
-            post: {
-                summary: 'Convert single image with custom parameters',
-                tags: ['Image Conversion'],
-                requestBody: {
-                    content: {
-                        'multipart/form-data': {
-                            schema: {
-                                type: 'object',
-                                properties: {
-                                    file: { type: 'string', format: 'binary' },
-                                    outputFormat: { type: 'string', enum: ['jpeg', 'png', 'webp', 'avif', 'tiff'] },
-                                    quality: { type: 'integer', minimum: 1, maximum: 100 },
-                                    width: { type: 'integer' },
-                                    height: { type: 'integer' },
-                                    maintainAspectRatio: { type: 'boolean' },
-                                    targetSizeKB: { type: 'integer' },
-                                    preset: { 
-                                        type: 'string', 
-                                        enum: ['square-small', 'square-large', 'portrait-small', 'portrait-large', 'landscape-small', 'landscape-large', 'facebook', 'instagram', 'twitter', 'linkedin']
-                                    }
-                                }
-                            }
-                        }
-                    }
-                },
-                responses: {
-                    200: {
-                        description: 'Image converted successfully',
-                        content: {
-                            'application/json': {
-                                schema: {
-                                    type: 'object',
-                                    properties: {
-                                        originalFile: { type: 'object' },
-                                        convertedFile: { 
-                                            type: 'object',
-                                            properties: {
-                                                url: { type: 'string', description: 'Temporary download URL (expires in 10 minutes)' }
-                                            }
-                                        },
-                                        compressionRatio: { type: 'number' },
-                                        finalQuality: { type: 'number' }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        '/api/convert-batch': {
-            post: {
-                summary: 'Convert multiple images in batch (up to 50)',
-                tags: ['Batch Processing'],
-                requestBody: {
-                    content: {
-                        'multipart/form-data': {
-                            schema: {
-                                type: 'object',
-                                properties: {
-                                    files: {
-                                        type: 'array',
-                                        items: { type: 'string', format: 'binary' },
-                                        maxItems: 50,
-                                        description: 'Image files to convert (max 50 files, 10MB each)'
-                                    },
-                                    outputFormat: { 
-                                        type: 'string', 
-                                        enum: ['jpeg', 'png', 'webp', 'avif', 'tiff'],
-                                        description: 'Output image format'
-                                    },
-                                    quality: { 
-                                        type: 'integer', 
-                                        minimum: 1, 
-                                        maximum: 100,
-                                        description: 'Image quality (1-100)'
-                                    },
-                                    width: { 
-                                        type: 'integer',
-                                        description: 'Target width in pixels'
-                                    },
-                                    height: { 
-                                        type: 'integer',
-                                        description: 'Target height in pixels'
-                                    },
-                                    maintainAspectRatio: { 
-                                        type: 'boolean',
-                                        description: 'Maintain original aspect ratio'
-                                    },
-                                    targetSizeKB: { 
-                                        type: 'integer',
-                                        description: 'Target file size in KB'
-                                    },
-                                    preset: { 
-                                        type: 'string', 
-                                        enum: ['square-small', 'square-large', 'portrait-small', 'portrait-large', 'landscape-small', 'landscape-large', 'facebook', 'instagram', 'twitter', 'linkedin'],
-                                        description: 'Use preset dimensions'
-                                    }
-                                },
-                                required: ['files', 'outputFormat']
-                            }
-                        }
-                    }
-                },
-                responses: {
-                    200: {
-                        description: 'Batch processing completed',
-                        content: {
-                            'application/json': {
-                                schema: {
-                                    type: 'object',
-                                    properties: {
-                                        results: { 
-                                            type: 'array',
-                                            items: {
-                                                type: 'object',
-                                                properties: {
-                                                    originalFile: { type: 'object' },
-                                                    convertedFile: {
-                                                        type: 'object',
-                                                        properties: {
-                                                            url: { type: 'string', description: 'Temporary download URL (expires in 10 minutes)' }
-                                                        }
-                                                    },
-                                                    compressionRatio: { type: 'number' },
-                                                    finalQuality: { type: 'number' },
-                                                    status: { type: 'string' }
-                                                }
-                                            }
-                                        },
-                                        totalProcessed: { type: 'integer' },
-                                        totalErrors: { type: 'integer' },
-                                        errors: { type: 'array', items: { type: 'string' } }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        '/api/enhance-image': {
-            post: {
-                summary: 'AI-powered image enhancement',
-                tags: ['AI Enhancement'],
-                requestBody: {
-                    content: {
-                        'multipart/form-data': {
-                            schema: {
-                                type: 'object',
-                                properties: {
-                                    file: { type: 'string', format: 'binary' },
-                                    enhancement: { 
-                                        type: 'string', 
-                                        enum: ['sharpen', 'denoise', 'brighten', 'contrast', 'auto'],
-                                        default: 'auto'
-                                    }
-                                }
-                            }
-                        }
-                    }
-                },
-                responses: {
-                    200: { description: 'Enhancement completed successfully' }
-                }
-            }
-        },
-        '/api/metadata': {
-            post: {
-                summary: 'Extract comprehensive image metadata',
-                tags: ['Metadata'],
-                requestBody: {
-                    content: {
-                        'multipart/form-data': {
-                            schema: {
-                                type: 'object',
-                                properties: {
-                                    file: { type: 'string', format: 'binary' }
-                                }
-                            }
-                        }
-                    }
-                },
-                responses: {
-                    200: { description: 'Metadata extracted successfully' }
-                }
-            }
-        },
-        '/api/health': {
-            get: {
-                summary: 'Health check endpoint',
-                tags: ['System'],
-                responses: {
-                    200: {
-                        description: 'System health status',
-                        content: {
-                            'application/json': {
-                                schema: {
-                                    type: 'object',
-                                    properties: {
-                                        status: { type: 'string' },
-                                        timestamp: { type: 'string' },
-                                        tempFiles: { type: 'integer' },
-                                        uptime: { type: 'number' },
-                                        memory: { type: 'object' }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    },
-    components: {
-        schemas: {
-            Error: {
-                type: 'object',
-                properties: {
-                    error: { type: 'string' }
-                }
-            }
-        }
-    }
-};
-
-// Setup Swagger UI
-app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerDocument, {
-    customCss: '.swagger-ui .topbar { display: none }',
-    customSiteTitle: 'Image Processing API Documentation'
-}));
-
 // Error handling middleware
 app.use((error, req, res, next) => {
     console.error('❌ Global error handler:', error);
@@ -899,7 +609,6 @@ app.use('*', (req, res) => {
     res.status(404).json({ 
         error: 'Endpoint not found',
         availableEndpoints: [
-            'GET /api-docs - API Documentation',
             'GET /api/health - Health Check',
             'POST /api/analyze-image - Image Analysis',
             'POST /api/convert-image - Single Conversion',
@@ -916,7 +625,6 @@ app.listen(PORT, () => {
     console.log(`🚀 Image Processing API Server Started`);
     console.log('🚀 =================================');
     console.log(`📡 Server running on: http://localhost:${PORT}`);
-    console.log(`📖 API Documentation: http://localhost:${PORT}/api-docs`);
     console.log(`🏥 Health Check: http://localhost:${PORT}/api/health`);
     console.log('🚀 =================================');
     console.log('📁 Features:');
@@ -926,7 +634,6 @@ app.listen(PORT, () => {
     console.log('   ✅ Comprehensive metadata extraction');
     console.log('   ✅ Auto temp file cleanup (10 minutes)');
     console.log('   ✅ Complete error handling & logging');
-    console.log('   ✅ Swagger UI documentation');
     console.log('🚀 =================================');
     console.log('🎨 Supported Formats:');
     console.log('   📥 Input: JPEG, PNG, WebP, AVIF, GIF, BMP, TIFF, SVG, ICO');
