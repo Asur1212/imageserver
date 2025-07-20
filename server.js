@@ -7,6 +7,7 @@ const fsSync = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const swaggerUi = require('swagger-ui-express');
 const cors = require('cors');
+const axios = require('axios');
 
 const app = express();
 const PORT = process.env.PORT || 3005;
@@ -352,22 +353,32 @@ app.post('/api/convert-batch', upload.array('files', 50), async (req, res) => {
             return res.status(400).json({ error: 'No files provided' });
         }
         
-        // Extract settings from form fields instead of JSON string
-        const settings = {
-            outputFormat: req.body.outputFormat,
-            quality: req.body.quality ? parseInt(req.body.quality) : 80,
-            width: req.body.width ? parseInt(req.body.width) : undefined,
-            height: req.body.height ? parseInt(req.body.height) : undefined,
-            maintainAspectRatio: req.body.maintainAspectRatio !== 'false',
-            targetSizeKB: req.body.targetSizeKB ? parseInt(req.body.targetSizeKB) : undefined,
-            preset: req.body.preset
-        };
+        // Parse settings - handle both JSON string and direct form fields
+        let settings;
+        if (req.body.settings) {
+            try {
+                settings = JSON.parse(req.body.settings);
+            } catch (e) {
+                return res.status(400).json({ error: 'Invalid settings JSON format' });
+            }
+        } else {
+            // Extract settings from individual form fields
+            settings = {
+                outputFormat: req.body.outputFormat,
+                quality: req.body.quality ? parseInt(req.body.quality) : 80,
+                width: req.body.width ? parseInt(req.body.width) : undefined,
+                height: req.body.height ? parseInt(req.body.height) : undefined,
+                maintainAspectRatio: req.body.maintainAspectRatio !== 'false',
+                targetSizeKB: req.body.targetSizeKB ? parseInt(req.body.targetSizeKB) : undefined,
+                preset: req.body.preset
+            };
+        }
         
         if (!settings || !settings.outputFormat) {
             return res.status(400).json({ error: 'Settings with outputFormat are required' });
         }
         
-        console.log(`📁 Processing ${req.files.length} files...`);
+        console.log(`📁 Processing ${req.files.length} files with settings:`, settings);
         
         const results = [];
         const errors = [];
@@ -381,10 +392,10 @@ app.post('/api/convert-batch', upload.array('files', 50), async (req, res) => {
                 
                 const convertOptions = {
                     outputFormat: settings.outputFormat.toLowerCase(),
-                    quality: settings.quality,
+                    quality: settings.quality || 80,
                     width: settings.width,
                     height: settings.height,
-                    maintainAspectRatio: settings.maintainAspectRatio,
+                    maintainAspectRatio: settings.maintainAspectRatio !== false,
                     targetSizeKB: settings.targetSizeKB
                 };
                 
@@ -393,6 +404,7 @@ app.post('/api/convert-batch', upload.array('files', 50), async (req, res) => {
                     const preset = PRESET_SIZES[settings.preset];
                     convertOptions.width = preset.width;
                     convertOptions.height = preset.height;
+                    console.log(`📐 Using preset: ${settings.preset} (${preset.width}x${preset.height})`);
                 }
                 
                 const convertedBuffer = await convertImage(file.buffer, convertOptions);
@@ -426,7 +438,7 @@ app.post('/api/convert-batch', upload.array('files', 50), async (req, res) => {
                 
                 results.push(result);
                 totalProcessed++;
-                console.log(`✅ Processed: ${file.originalname}`);
+                console.log(`✅ Processed: ${file.originalname} (${originalInfo.size} → ${convertedInfo.size} bytes)`);
                 
             } catch (error) {
                 console.error(`❌ Failed to process ${file.originalname}:`, error.message);
@@ -564,6 +576,110 @@ app.post('/api/metadata', upload.single('file'), async (req, res) => {
         
     } catch (error) {
         console.error('❌ Metadata extraction failed:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Add the new /api/convert-from-url endpoint after existing routes
+app.post('/api/convert-from-url', async (req, res) => {
+    console.log('🌐 Starting URL-based image conversion...');
+    
+    try {
+        const { imageUrl, outputFormat, quality, width, height, maintainAspectRatio, targetSizeKB, preset } = req.body;
+        
+        if (!imageUrl) {
+            return res.status(400).json({ error: 'imageUrl is required' });
+        }
+        
+        if (!outputFormat) {
+            return res.status(400).json({ error: 'outputFormat is required' });
+        }
+        
+        console.log(`🔗 Downloading image from: ${imageUrl}`);
+        
+        // Download image from URL
+        let response;
+        try {
+            response = await axios.get(imageUrl, {
+                responseType: 'arraybuffer',
+                timeout: 30000, // 30 seconds timeout
+                maxContentLength: 10 * 1024 * 1024, // 10MB limit
+                headers: {
+                    'User-Agent': 'Image-Processing-API/1.0'
+                }
+            });
+        } catch (error) {
+            console.error('❌ Failed to download image:', error.message);
+            return res.status(400).json({ 
+                error: `Failed to download image from URL: ${error.message}` 
+            });
+        }
+        
+        const imageBuffer = Buffer.from(response.data);
+        const originalInfo = await getImageInfo(imageBuffer);
+        
+        console.log(`📁 Downloaded image: ${imageBuffer.length} bytes (${originalInfo.width}x${originalInfo.height})`);
+        
+        // Validate file type
+        const allowedFormats = ['jpeg', 'jpg', 'png', 'webp', 'gif', 'bmp', 'tiff', 'avif'];
+        if (!allowedFormats.includes(originalInfo.format.toLowerCase())) {
+            return res.status(400).json({ 
+                error: `Unsupported image format: ${originalInfo.format}` 
+            });
+        }
+        
+        // Prepare conversion options
+        const convertOptions = {
+            outputFormat: outputFormat.toLowerCase(),
+            quality: quality ? parseInt(quality) : 80,
+            width: width ? parseInt(width) : undefined,
+            height: height ? parseInt(height) : undefined,
+            maintainAspectRatio: maintainAspectRatio !== false,
+            targetSizeKB: targetSizeKB ? parseInt(targetSizeKB) : undefined
+        };
+        
+        // Apply preset if specified
+        if (preset && PRESET_SIZES[preset]) {
+            const presetSize = PRESET_SIZES[preset];
+            convertOptions.width = presetSize.width;
+            convertOptions.height = presetSize.height;
+            console.log(`📐 Using preset: ${preset} (${presetSize.width}x${presetSize.height})`);
+        }
+        
+        // Convert image
+        const convertedBuffer = await convertImage(imageBuffer, convertOptions);
+        const convertedInfo = await getImageInfo(convertedBuffer);
+        
+        // Save to temp directory
+        const filename = `url_${uuidv4()}.${outputFormat.toLowerCase()}`;
+        const filePath = await saveToTemp(convertedBuffer, filename);
+        const fileUrl = `${req.protocol}://${req.get('host')}/temp/${filename}`;
+        
+        const result = {
+            sourceUrl: imageUrl,
+            originalFile: {
+                size: originalInfo.size,
+                type: `image/${originalInfo.format}`,
+                width: originalInfo.width,
+                height: originalInfo.height
+            },
+            convertedFile: {
+                name: filename,
+                size: convertedInfo.size,
+                type: `image/${outputFormat.toLowerCase()}`,
+                width: convertedInfo.width,
+                height: convertedInfo.height,
+                url: fileUrl
+            },
+            compressionRatio: Number((originalInfo.size / convertedInfo.size).toFixed(2)),
+            finalQuality: convertOptions.quality
+        };
+        
+        console.log(`✅ URL conversion completed: ${originalInfo.size} bytes → ${convertedInfo.size} bytes`);
+        res.json(result);
+        
+    } catch (error) {
+        console.error('❌ URL conversion failed:', error.message);
         res.status(500).json({ error: error.message });
     }
 });
@@ -848,6 +964,88 @@ const swaggerDocument = {
                                 }
                             }
                         }
+                    }
+                }
+            }
+        },
+        '/api/convert-from-url': {
+            post: {
+                summary: 'Convert image from URL',
+                tags: ['Image Conversion'],
+                requestBody: {
+                    content: {
+                        'application/json': {
+                            schema: {
+                                type: 'object',
+                                properties: {
+                                    imageUrl: { 
+                                        type: 'string', 
+                                        format: 'uri',
+                                        description: 'URL of the image to download and convert'
+                                    },
+                                    outputFormat: { 
+                                        type: 'string', 
+                                        enum: ['jpeg', 'png', 'webp', 'avif', 'tiff'],
+                                        description: 'Output image format'
+                                    },
+                                    quality: { 
+                                        type: 'integer', 
+                                        minimum: 1, 
+                                        maximum: 100,
+                                        description: 'Image quality (1-100)'
+                                    },
+                                    width: { 
+                                        type: 'integer',
+                                        description: 'Target width in pixels'
+                                    },
+                                    height: { 
+                                        type: 'integer',
+                                        description: 'Target height in pixels'
+                                    },
+                                    maintainAspectRatio: { 
+                                        type: 'boolean',
+                                        description: 'Maintain original aspect ratio'
+                                    },
+                                    targetSizeKB: { 
+                                        type: 'integer',
+                                        description: 'Target file size in KB'
+                                    },
+                                    preset: { 
+                                        type: 'string', 
+                                        enum: ['square-small', 'square-large', 'portrait-small', 'portrait-large', 'landscape-small', 'landscape-large', 'facebook', 'instagram', 'twitter', 'linkedin'],
+                                        description: 'Use preset dimensions'
+                                    }
+                                },
+                                required: ['imageUrl', 'outputFormat']
+                            }
+                        }
+                    }
+                },
+                responses: {
+                    200: {
+                        description: 'Image converted successfully',
+                        content: {
+                            'application/json': {
+                                schema: {
+                                    type: 'object',
+                                    properties: {
+                                        sourceUrl: { type: 'string' },
+                                        originalFile: { type: 'object' },
+                                        convertedFile: { 
+                                            type: 'object',
+                                            properties: {
+                                                url: { type: 'string', description: 'Temporary download URL (expires in 10 minutes)' }
+                                            }
+                                        },
+                                        compressionRatio: { type: 'number' },
+                                        finalQuality: { type: 'number' }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    400: {
+                        description: 'Bad request - invalid URL or parameters'
                     }
                 }
             }
