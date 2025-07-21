@@ -13,7 +13,7 @@ const app = express();
 const PORT = process.env.PORT || 3005;
 
 // Middleware
-app.use(cors());
+app.use(cors({ origin: '*' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -364,14 +364,14 @@ app.post('/api/convert-batch', upload.array('files', 50), async (req, res) => {
         } else {
             // Extract settings from individual form fields
             settings = {
-                outputFormat: req.body.outputFormat,
-                quality: req.body.quality ? parseInt(req.body.quality) : 80,
-                width: req.body.width ? parseInt(req.body.width) : undefined,
-                height: req.body.height ? parseInt(req.body.height) : undefined,
-                maintainAspectRatio: req.body.maintainAspectRatio !== 'false',
-                targetSizeKB: req.body.targetSizeKB ? parseInt(req.body.targetSizeKB) : undefined,
-                preset: req.body.preset
-            };
+            outputFormat: req.body.outputFormat,
+            quality: req.body.quality ? parseInt(req.body.quality) : 80,
+            width: req.body.width ? parseInt(req.body.width) : undefined,
+            height: req.body.height ? parseInt(req.body.height) : undefined,
+            maintainAspectRatio: req.body.maintainAspectRatio !== 'false',
+            targetSizeKB: req.body.targetSizeKB ? parseInt(req.body.targetSizeKB) : undefined,
+            preset: req.body.preset
+        };
         }
         
         if (!settings || !settings.outputFormat) {
